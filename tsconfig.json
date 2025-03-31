@@ -6,6 +6,8 @@
       "es2020",
       "dom"
     ],
+    "outDir": "./dist",
+    "rootDir": "./",
     "declaration": true,
     "strict": true,
     "noImplicitAny": true,
@@ -24,8 +26,13 @@
       "./node_modules/@types"
     ]
   },
+  "include": [
+    "bin/**/*.ts",
+    "lib/**/*.ts"
+  ],
   "exclude": [
     "node_modules",
-    "cdk.out"
+    "cdk.out",
+    "dist"
   ]
 }

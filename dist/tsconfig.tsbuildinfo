@@ -1,0 +1,1 @@
+{"root":["../bin/ai_house.ts","../lib/constructs/bedrock-agent.ts","../lib/constructs/gluejob.ts","../lib/constructs/lambda-function.ts","../lib/constructs/s3-bucket.ts","../lib/stacks/bedrock-stack.ts","../lib/stacks/glue-stack.ts","../lib/stacks/lambda-stack.ts","../lib/stacks/quicksight-stack.ts","../lib/stacks/s3-stack.ts"],"version":"5.8.2"}
