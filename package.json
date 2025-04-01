@@ -9,9 +9,10 @@
     "watch": "tsc -w",
     "test": "jest",
     "cdk": "cdk",
-    "clean":"del /s /q dist && del /s /q *.js && del /s /q *.d.ts"
+    "clean": "del /s /q dist && del /s /q *.js && del /s /q *.d.ts"
   },
   "devDependencies": {
+    "@cdklabs/generative-ai-cdk-constructs": "^0.1.298",
     "@types/jest": "^29.5.14",
     "@types/node": "22.7.9",
     "aws-cdk": "2.173.4",
