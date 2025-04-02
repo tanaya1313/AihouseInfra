@@ -3,7 +3,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 import { CustomLambdaFunction } from '../constructs/lambda-function';
 
-export class ETLStack extends cdk.Stack {
+export class LambdaStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 

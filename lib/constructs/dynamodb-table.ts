@@ -13,6 +13,7 @@ export interface ProvisionedTableProps {
 export class ProvisionedDynamoTable extends Construct {
   public readonly table: dynamodb.Table;
 
+
   constructor(scope: Construct, id: string, props: ProvisionedTableProps) {
     super(scope, id);
 
@@ -33,5 +34,6 @@ export class ProvisionedDynamoTable extends Construct {
         : undefined,
       removalPolicy: cdk.RemovalPolicy.RETAIN, 
     });
+    // this.tableName = this.table.tableName;
   }
 }

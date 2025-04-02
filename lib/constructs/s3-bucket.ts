@@ -12,7 +12,7 @@ export class S3DataBucket extends Construct {
   constructor(scope: Construct, id: string, props: DataBucketProps) {
     super(scope, id);
 
-    this.bucket = new s3.Bucket(this, 'ETLDataBucket', {
+    this.bucket = new s3.Bucket(this, 'DataBucket', {
       bucketName: props.bucketName,
       versioned: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN, // Data loss prevent karega
@@ -28,6 +28,7 @@ export class S3DataBucket extends Construct {
         },
       ],
     });
+    
   }
 }
 
