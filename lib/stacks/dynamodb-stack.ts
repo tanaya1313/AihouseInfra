@@ -1,12 +1,13 @@
 import * as cdk from 'aws-cdk-lib';
+import { NestedStack, NestedStackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { ProvisionedDynamoTable } from '../constructs/dynamodb-table';
 
-export class DynamoDBStack extends cdk.Stack {
+export class DynamoDBStack extends NestedStack {
   public readonly dashboardsTable: ProvisionedDynamoTable;
   public readonly knowledgeBaseTable: ProvisionedDynamoTable;
 
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props?: NestedStackProps) {
     super(scope, id, props);
 
     // Create the dashboards table
@@ -29,7 +30,7 @@ export class DynamoDBStack extends cdk.Stack {
 
     // Export the table names
     new cdk.CfnOutput(this, 'DashboardsTableNameExport', {
-      value: this.dashboardsTable.  table.tableName,
+      value: this.dashboardsTable.table.tableName,
       description: 'The name of the dashboards DynamoDB table',
       exportName: 'DashboardsTableName',
     });
@@ -39,7 +40,5 @@ export class DynamoDBStack extends cdk.Stack {
       description: 'The name of the knowledge base DynamoDB table',
       exportName: 'KnowledgeBaseTableName',
     });
-
-
   }
 }
