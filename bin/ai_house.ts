@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
-import { CombinedInfraStack } from '../lib/stacks/combined-infra-stack';
+import { AiHouseStack} from '../lib/stacks/AiHouseStack';
 
 
 
 const app = new cdk.App();
-new CombinedInfraStack(app, 'CombinedInfraStack', {
+new AiHouseStack(app, 'AiHouseStack', {
   env: { 
     account: process.env.CDK_DEFAULT_ACCOUNT || 'default-account', 
     region: process.env.CDK_DEFAULT_REGION || 'default-region' 

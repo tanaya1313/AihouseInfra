@@ -4,6 +4,7 @@ import { Construct } from 'constructs';
 
 export interface DataBucketProps {
   bucketName: string;
+  environment: string;
 }
 
 export class S3DataBucket extends Construct {
@@ -13,9 +14,9 @@ export class S3DataBucket extends Construct {
     super(scope, id);
 
     this.bucket = new s3.Bucket(this, 'DataBucket', {
-      bucketName: props.bucketName,
+      bucketName: `${props.environment}-${props.bucketName}-${cdk.Stack.of(this).region}-${cdk.Stack.of(this).account}`,
       versioned: true,
-      removalPolicy: cdk.RemovalPolicy.RETAIN, // Data loss prevent karega
+      removalPolicy: cdk.RemovalPolicy.DESTROY, // Data loss prevent karega
       encryption: s3.BucketEncryption.S3_MANAGED, // Encryption enabled
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL, // Public access block
       eventBridgeEnabled: true, //EventBridge for lambda and other services
