@@ -12,6 +12,7 @@ import { AthenaConstruct } from '../constructs/athena-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import { GlueConstruct } from '../constructs/glue-setup';
 import { QuickSightAthenaConstruct } from '../constructs/quicksight-athena';
+import { AuroraVectorStoreConstruct } from '../constructs/aurora-postgres';
 
 
 export class AiHouseStack extends cdk.Stack {
@@ -23,6 +24,7 @@ export class AiHouseStack extends cdk.Stack {
   public readonly dataSource: genAI.bedrock.S3DataSource;
   public readonly bucket: s3.Bucket;
   public readonly agent: genAI.bedrock.Agent;
+  public readonly auroraDb: AuroraVectorStoreConstruct;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -70,53 +72,90 @@ export class AiHouseStack extends cdk.Stack {
   //   },
   // });
 
-  // --- Aurora Vector Store ---
-  const auroraDb = new genAI.amazonaurora.AmazonAuroraVectorStore(this, 'AuroraVectorStore', {
-    embeddingsModelVectorDimension: 1024,
-  });
+    // --- Aurora Vector Store ---
+    const auroraDb = new AuroraVectorStoreConstruct(this, 'VectorStore', {
+      dbName: 'vectorstore',
+      username: 'vectoruser',
+      enableIamAuth: true,
+      environment: EnvironmentParam.valueAsString,
+    });
 
-  // --- Bedrock Knowledge Base ---
-  this.knowledgeBase = new genAI.bedrock.VectorKnowledgeBase(this, 'KnowledgeBase', {
-    vectorStore: auroraDb,
-    embeddingsModel: genAI.bedrock.BedrockFoundationModel.TITAN_EMBED_TEXT_V2_1024,
-    instruction: 'Your role is to analyze Google Ads campaign data and generate insights that help optimize performance. You must provide well-structured, actionable insights that are responsive to the specific question asked, while automatically determining the most effective format for presenting information.For ANY question outside areas of Google advertisement, I will respond only with: "I am not designed to answer that right now. I specialize in Google Ads analysis and can help you with questions related to campaign performance, optimization, budgeting, keywords, metrics, and conversions."',
-  });
+    // --- Bedrock Knowledge Base ---
+    const knowledgeBaseRole = new iam.Role(this, 'KnowledgeBaseRole', {
+      assumedBy: new iam.ServicePrincipal('bedrock.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonBedrockFullAccess'),
+      ],
+    });
 
-  // --- S3 Bucket for Documents ---
-  // this.bucket = new s3.Bucket(this, 'DocBucket', {
-  //   lifecycleRules: [{ expiration: Duration.days(100) }],
-  //   blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-  //   encryption: s3.BucketEncryption.S3_MANAGED,
-  //   enforceSSL: true,
-  //   removalPolicy: RemovalPolicy.RETAIN,
-  // });
+    const knowledgeBase = new cdk.aws_bedrock.CfnKnowledgeBase(this, 'KnowledgeBase', {
+      name: 'KnowledgeBase',
+      description: 'Knowledge base for Bedrock',
+      vectorStore: {
+        aurora: {
+          clusterIdentifier: auroraDb.cluster.clusterIdentifier,
+          databaseName: 'bedrock_vector_db',
+          schemaName: 'bedrock_integration',
+          tableName: 'bedrock_kb',
+          vectorField: 'embedding',
+          textField: 'chunks',
+          metadataField: 'metadata',
+          primaryKeyField: 'id',
+          securityGroupIds: [auroraDb.securityGroup.securityGroupId],
+          secretArn: auroraDb.secret.secretArn,
+        },
+      },
+      embeddingsModel: 'amazon.titan-embed-text-v2',
+      roleArn: knowledgeBaseRole.roleArn,
+    });
 
-  // --- S3 Bucket Policy for Bedrock access ---
-  this.dataBucket1.bucket.addToResourcePolicy(
-    new iam.PolicyStatement({
-      actions: ['s3:GetObject', 's3:ListBucket'],
-      resources: [this.bucket.bucketArn, `${this.bucket.bucketArn}/*`],
-      principals: [new iam.ServicePrincipal('bedrock.amazonaws.com')],
-    }),
-  );
+    // --- S3 Bucket for Documents ---
+    this.bucket = new s3.Bucket(this, 'DocBucket', {
+      lifecycleRules: [{ expiration: Duration.days(100) }],
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
 
-  // --- Bedrock S3 Data Source ---
-  this.dataSource = new genAI.bedrock.S3DataSource(this, 'DataSource', {
-    bucket: this.dataBucket1.bucket,
-    knowledgeBase: this.knowledgeBase,
-    dataSourceName: 'datasource',
-    chunkingStrategy: genAI.bedrock.ChunkingStrategy.FIXED_SIZE,
-  });
+    this.bucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:GetObject', 's3:ListBucket'],
+        resources: [this.bucket.bucketArn, `${this.bucket.bucketArn}/*`],
+        principals: [new iam.ServicePrincipal('bedrock.amazonaws.com')],
+      }),
+    );
 
-  // --- Bedrock Agent ---
-  this.agent = new genAI.bedrock.Agent(this, 'Agent', {
-    description: 'Bedrock agent to answer questions about Amazon books, especially teenage fiction.',
-    foundationModel: genAI.bedrock.BedrockFoundationModel.AMAZON_NOVA_LITE_V1,
-    instruction: 'Your role is to analyze Google Ads campaign data and generate insights that help optimize performance. You must provide well-structured, actionable insights that are responsive to the specific question asked, while automatically determining the most effective format for presenting information.For ANY question outside areas of Google advertisement, I will respond only with: "I am not designed to answer that right now. I specialize in Google Ads analysis and can help you with questions related to campaign performance, optimization, budgeting, keywords, metrics, and conversions."',
-    idleSessionTTL: Duration.minutes(10),
-    knowledgeBases: [this.knowledgeBase],
-    shouldPrepareAgent: true,
-  });
+    // --- Bedrock S3 Data Source ---
+    const dataSource = new cdk.aws_bedrock.CfnDataSource(this, 'DataSource', {
+      name: 'DataSource',
+      description: 'Data source for Bedrock',
+      s3Config: {
+        bucketName: this.bucket.bucketName,
+        prefix: 'datasource/',
+      },
+      knowledgeBaseName: knowledgeBase.name,
+    });
+
+    // --- Bedrock Agent ---
+    const agentRole = new iam.Role(this, 'AgentRole', {
+      assumedBy: new iam.ServicePrincipal('bedrock.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonBedrockFullAccess'),
+      ],
+    });
+
+    new cdk.aws_bedrock.CfnAgent(this, 'Agent', {
+      name: 'Agent',
+      description: 'Bedrock agent to analyze Google Ads campaign data and provide actionable insights.',
+      foundationModel: 'amazon.nova-lite-v1',
+      instruction: 'Your role is to analyze Google Ads campaign data and generate insights that help optimize performance.',
+      idleSessionTTLInSeconds: 600,
+      knowledgeBaseNames: [knowledgeBase.name],
+      roleArn: agentRole.roleArn,
+    });
+  }
+}
 
     // --- Glue Setup ---
     const glueSetup = new GlueConstruct(this, 'GlueSetup', {

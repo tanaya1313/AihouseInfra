@@ -1,5 +1,5 @@
 import { Construct } from 'constructs';
-import { aws_glue as glue, aws_iam as iam, aws_s3 as s3 } from 'aws-cdk-lib';
+import { aws_glue as glue, aws_iam as iam, aws_s3 as s3, Aws } from 'aws-cdk-lib';
 
 interface GlueConstructProps {
   s3Target: s3.IBucket;
@@ -18,7 +18,7 @@ export class GlueConstruct extends Construct {
 
     // Glue Database
     this.glueDatabase = new glue.CfnDatabase(this, 'GlueDatabase', {
-      catalogId: scope.node.tryGetContext('account') ?? process.env.CDK_DEFAULT_ACCOUNT!,
+      catalogId: Aws.ACCOUNT_ID,
       databaseInput: {
         name: databaseName,
       },

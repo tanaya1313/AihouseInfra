@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Pattern to match in bucket names
-PATTERN="staging"
+PATTERN="prod"
 
 # Get all buckets that match the pattern
 buckets=$(aws s3api list-buckets --query "Buckets[].Name" --output text | tr '\t' '\n' | grep -- "$PATTERN")
