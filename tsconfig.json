@@ -29,7 +29,7 @@
   "include": [
     "bin/**/*.ts",
     "lib/**/*.ts"
-  ],
+, "lib/constructs/s3-bucket.tsx"  ],
   "exclude": [
     "node_modules",
     "cdk.out",

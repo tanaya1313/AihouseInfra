@@ -13,6 +13,8 @@ import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import { GlueConstruct } from '../constructs/glue-setup';
 import { QuickSightAthenaConstruct } from '../constructs/quicksight-athena';
 import { AuroraVectorStoreConstruct } from '../constructs/aurora-postgres';
+import { BedrockKnowledgeBaseConstruct } from '../constructs/bedrock-construct';
+import { IamConstructStack } from '../constructs/iam-rules-policies';
 
 
 export class AiHouseStack extends cdk.Stack {
@@ -20,11 +22,10 @@ export class AiHouseStack extends cdk.Stack {
   public readonly dataBucket2: S3DataBucket;
   public readonly dashboardsTable: ProvisionedDynamoTable;
   public readonly knowledgeBaseTable: ProvisionedDynamoTable;
-  public readonly knowledgeBase: genAI.bedrock.VectorKnowledgeBase;
-  public readonly dataSource: genAI.bedrock.S3DataSource;
+  public readonly BedrockAgent:BedrockKnowledgeBaseConstruct; 
   public readonly bucket: s3.Bucket;
-  public readonly agent: genAI.bedrock.Agent;
   public readonly auroraDb: AuroraVectorStoreConstruct;
+  public readonly IamRole: IamConstructStack;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -36,6 +37,15 @@ export class AiHouseStack extends cdk.Stack {
       description: 'The environment for deployment.',
       noEcho: false, // Ensures the key is not displayed in the CloudFormation console
     });
+
+    // --- IAM Role  ---
+    this.IamRole = new IamConstructStack(this, 'IamConstruct', {
+      environment: EnvironmentParam.valueAsString,
+      externalID: 'your-external-id',
+      principalRoleArn: 'arn:aws:iam::726510512353:role/dev-aihouse-nuvista-ECS-Task-IAMrole', // Your actual role ARN
+
+    });
+
 
     // --- S3 Buckets ---
     this.dataBucket1 = new S3DataBucket(this, 'DataBucket1', {
@@ -58,182 +68,113 @@ export class AiHouseStack extends cdk.Stack {
       Environment: EnvironmentParam.valueAsString,
     });
 
+  
 
 
 
 
-
-  // // --- Secrets Manager for Aurora credentials ---
-  // const auroraSecret = new secretsmanager.Secret(this, 'AuroraSecret', {
-  //   secretName: 'AuroraSecret',
-  //   secretObjectValue: {
-  //     username: cdk.SecretValue.unsafePlainText('aurora_user'),
-  //     password: cdk.SecretValue.unsafePlainText('aurora_password'),
-  //   },
+  // //--- Bedrock Knowledge Base and Agent---
+  this.auroraDb = new AuroraVectorStoreConstruct(this, 'AuroraVectorStore', {
+    dbName: `${EnvironmentParam.valueAsString}-aihouse-db`,
+    username: 'BedrockUser',
+    enableIamAuth: true,
+    environment: EnvironmentParam.valueAsString,
+  });
+  // this.BedrockAgent= new BedrockKnowledgeBaseConstruct(this, 'BedrockKnowledgeBase', {
+  //   bucket: this.dataBucket1.bucket,
+  //   auroraCluster: this.auroraDb.cluster,
+  //   auroraSecretArn: this.auroraDb.secret.secretArn,
+  //   auroraSecurityGroup: this.auroraDb.securityGroup,
+  //   databaseName: 'bedrock_kb',
+  //   tableName: 'knowledge_base',
+  //   Environment: EnvironmentParam.valueAsString,
+  //   bedrockRole: this.IamRole.role,
   // });
 
-    // --- Aurora Vector Store ---
-    const auroraDb = new AuroraVectorStoreConstruct(this, 'VectorStore', {
-      dbName: 'vectorstore',
-      username: 'vectoruser',
-      enableIamAuth: true,
-      environment: EnvironmentParam.valueAsString,
-    });
+  // this.BedrockAgent.node.addDependency(this.auroraDb.cluster);
+  // this.BedrockAgent.node.addDependency(this.auroraDb.lambdaFunction);
+  
 
-    // --- Bedrock Knowledge Base ---
-    const knowledgeBaseRole = new iam.Role(this, 'KnowledgeBaseRole', {
-      assumedBy: new iam.ServicePrincipal('bedrock.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonBedrockFullAccess'),
-      ],
-    });
+   
+    
 
-    const knowledgeBase = new cdk.aws_bedrock.CfnKnowledgeBase(this, 'KnowledgeBase', {
-      name: 'KnowledgeBase',
-      description: 'Knowledge base for Bedrock',
-      vectorStore: {
-        aurora: {
-          clusterIdentifier: auroraDb.cluster.clusterIdentifier,
-          databaseName: 'bedrock_vector_db',
-          schemaName: 'bedrock_integration',
-          tableName: 'bedrock_kb',
-          vectorField: 'embedding',
-          textField: 'chunks',
-          metadataField: 'metadata',
-          primaryKeyField: 'id',
-          securityGroupIds: [auroraDb.securityGroup.securityGroupId],
-          secretArn: auroraDb.secret.secretArn,
-        },
-      },
-      embeddingsModel: 'amazon.titan-embed-text-v2',
-      roleArn: knowledgeBaseRole.roleArn,
-    });
+  //   // --- Glue Setup ---
+  //   const glueSetup = new GlueConstruct(this, 'GlueSetup', {
+  //     s3Target: this.dataBucket2.bucket,
+  //     databaseName: 'aihouse-database',
+  //     crawlerName: 'aihouse-crawler',
+  //   });
 
-    // --- S3 Bucket for Documents ---
-    this.bucket = new s3.Bucket(this, 'DocBucket', {
-      lifecycleRules: [{ expiration: Duration.days(100) }],
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      encryption: s3.BucketEncryption.S3_MANAGED,
-      enforceSSL: true,
-      removalPolicy: RemovalPolicy.RETAIN,
-    });
+  //   // --- Athena Query Results Bucket ---
+  //   const athenaBucket = new s3.Bucket(this, 'AthenaQueryResultsBucket', {
+  //     removalPolicy: cdk.RemovalPolicy.DESTROY,
+  //     blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+  //     versioned: true, // Recommended for Athena result buckets
+  //   });
 
-    this.bucket.addToResourcePolicy(
-      new iam.PolicyStatement({
-        actions: ['s3:GetObject', 's3:ListBucket'],
-        resources: [this.bucket.bucketArn, `${this.bucket.bucketArn}/*`],
-        principals: [new iam.ServicePrincipal('bedrock.amazonaws.com')],
-      }),
-    );
+  //   // Allow Athena service to access the bucket directly
+  //   athenaBucket.addToResourcePolicy(new iam.PolicyStatement({
+  //     sid: 'AllowAthenaServiceAccess',
+  //     effect: iam.Effect.ALLOW,
+  //     principals: [new iam.ServicePrincipal('athena.amazonaws.com')],
+  //     actions: [
+  //       's3:GetBucketLocation',
+  //       's3:GetObject',
+  //       's3:ListBucket',
+  //       's3:ListBucketMultipartUploads',
+  //       's3:ListMultipartUploadParts',
+  //       's3:AbortMultipartUpload',
+  //       's3:PutObject',
+  //       's3:DeleteObject',
+  //     ],
+  //     resources: [
+  //       athenaBucket.bucketArn,
+  //       `${athenaBucket.bucketArn}/*`,
+  //     ],
+  //   }));
 
-    // --- Bedrock S3 Data Source ---
-    const dataSource = new cdk.aws_bedrock.CfnDataSource(this, 'DataSource', {
-      name: 'DataSource',
-      description: 'Data source for Bedrock',
-      s3Config: {
-        bucketName: this.bucket.bucketName,
-        prefix: 'datasource/',
-      },
-      knowledgeBaseName: knowledgeBase.name,
-    });
+  //   // --- QuickSight Role ---
+  //   const quickSightRole = iam.Role.fromRoleName(
+  //     this,
+  //     'QuickSightServiceRole',
+  //     'aws-quicksight-service-role-v0'
+  //   );
 
-    // --- Bedrock Agent ---
-    const agentRole = new iam.Role(this, 'AgentRole', {
-      assumedBy: new iam.ServicePrincipal('bedrock.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonBedrockFullAccess'),
-      ],
-    });
+  //   quickSightRole.attachInlinePolicy(
+  //     new iam.Policy(this, 'QuickSightPolicy', {
+  //       statements: [
+  //         new iam.PolicyStatement({
+  //           effect: iam.Effect.ALLOW,
+  //           actions: [
+  //             's3:GetObject',
+  //             's3:ListBucket',
+  //             's3:GetBucketLocation',
+  //             's3:PutObject',
+  //             's3:DeleteObject',
+  //           ],
+  //           resources: [
+  //             athenaBucket.bucketArn,
+  //             `${athenaBucket.bucketArn}/*`,
+  //           ],
+  //         }),
+  //       ],
+  //     })
+  //   );
 
-    new cdk.aws_bedrock.CfnAgent(this, 'Agent', {
-      name: 'Agent',
-      description: 'Bedrock agent to analyze Google Ads campaign data and provide actionable insights.',
-      foundationModel: 'amazon.nova-lite-v1',
-      instruction: 'Your role is to analyze Google Ads campaign data and generate insights that help optimize performance.',
-      idleSessionTTLInSeconds: 600,
-      knowledgeBaseNames: [knowledgeBase.name],
-      roleArn: agentRole.roleArn,
-    });
-  }
-}
+  //   // --- Athena Construct ---
+  //   const athenaWorkspace = new AthenaConstruct(this, 'AthenaWorkspace', {
+  //     resultBucket: athenaBucket,
+  //     environment: EnvironmentParam.valueAsString,
+  //   });
+  //   athenaWorkspace.node.addDependency(athenaBucket);
 
-    // --- Glue Setup ---
-    const glueSetup = new GlueConstruct(this, 'GlueSetup', {
-      s3Target: this.dataBucket2.bucket,
-      databaseName: 'aihouse-database',
-      crawlerName: 'aihouse-crawler',
-    });
-
-    // --- Athena Query Results Bucket ---
-    const athenaBucket = new s3.Bucket(this, 'AthenaQueryResultsBucket', {
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      versioned: true, // Recommended for Athena result buckets
-    });
-
-    // Allow Athena service to access the bucket directly
-    athenaBucket.addToResourcePolicy(new iam.PolicyStatement({
-      sid: 'AllowAthenaServiceAccess',
-      effect: iam.Effect.ALLOW,
-      principals: [new iam.ServicePrincipal('athena.amazonaws.com')],
-      actions: [
-        's3:GetBucketLocation',
-        's3:GetObject',
-        's3:ListBucket',
-        's3:ListBucketMultipartUploads',
-        's3:ListMultipartUploadParts',
-        's3:AbortMultipartUpload',
-        's3:PutObject',
-        's3:DeleteObject',
-      ],
-      resources: [
-        athenaBucket.bucketArn,
-        `${athenaBucket.bucketArn}/*`,
-      ],
-    }));
-
-    // --- QuickSight Role ---
-    const quickSightRole = iam.Role.fromRoleName(
-      this,
-      'QuickSightServiceRole',
-      'aws-quicksight-service-role-v0'
-    );
-
-    quickSightRole.attachInlinePolicy(
-      new iam.Policy(this, 'QuickSightPolicy', {
-        statements: [
-          new iam.PolicyStatement({
-            effect: iam.Effect.ALLOW,
-            actions: [
-              's3:GetObject',
-              's3:ListBucket',
-              's3:GetBucketLocation',
-              's3:PutObject',
-              's3:DeleteObject',
-            ],
-            resources: [
-              athenaBucket.bucketArn,
-              `${athenaBucket.bucketArn}/*`,
-            ],
-          }),
-        ],
-      })
-    );
-
-    // --- Athena Construct ---
-    const athenaWorkspace = new AthenaConstruct(this, 'AthenaWorkspace', {
-      resultBucket: athenaBucket,
-      environment: EnvironmentParam.valueAsString,
-    });
-    athenaWorkspace.node.addDependency(athenaBucket);
-
-    // --- QuickSight Construct ---
-    const quickSight = new QuickSightAthenaConstruct(this, 'QuickSightAthena', {
-      athenaWorkGroup: athenaWorkspace.workGroupName,
-      environment: EnvironmentParam.valueAsString,
-    });
-    quickSight.node.addDependency(athenaWorkspace);
-    quickSight.node.addDependency(glueSetup);
-    quickSight.node.addDependency(athenaBucket);
+  //   // --- QuickSight Construct ---
+  //   const quickSight = new QuickSightAthenaConstruct(this, 'QuickSightAthena', {
+  //     athenaWorkGroup: athenaWorkspace.workGroupName,
+  //     environment: EnvironmentParam.valueAsString,
+  //   });
+  //   quickSight.node.addDependency(athenaWorkspace);
+  //   quickSight.node.addDependency(glueSetup);
+  //   quickSight.node.addDependency(athenaBucket);
   }
 }
